@@ -159,6 +159,7 @@ struct FramebufferRegs {
         } stencil_test;
 
         union {
+            u32 depth_color_mask;
             BitField<0, 1, u32> depth_test_enable;
             BitField<4, 3, CompareFunc> depth_test_func;
             BitField<8, 1, u32> red_enable;
@@ -280,6 +281,14 @@ struct FramebufferRegs {
 
         return 0;
     }
+
+    bool IsShadowRendering() const {
+        return output_merger.fragment_operation_mode == FragmentOperationMode::Shadow;
+    }
+
+    bool HasStencil() const {
+        return framebuffer.depth_format == DepthFormat::D24S8;
+    };
 
     INSERT_PADDING_WORDS(0x10); // Gas related registers
 

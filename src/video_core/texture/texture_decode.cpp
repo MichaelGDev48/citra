@@ -2,10 +2,10 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <bit>
 #include "common/assert.h"
 #include "common/color.h"
 #include "common/logging/log.h"
-#include "common/math_util.h"
 #include "common/swap.h"
 #include "common/vector_math.h"
 #include "video_core/regs_texturing.h"
@@ -221,6 +221,121 @@ TextureInfo TextureInfo::FromPicaRegister(const TexturingRegs::TextureConfig& co
     info.format = format;
     info.SetDefaultStride();
     return info;
+}
+
+void ConvertBGRToRGB(std::span<const std::byte> source, std::span<std::byte> dest) {
+    for (std::size_t i = 0; i < source.size(); i += 3) {
+        u32 bgr{};
+        std::memcpy(&bgr, source.data() + i, 3);
+        const u32 rgb = Common::swap32(bgr << 8);
+        std::memcpy(dest.data() + i, &rgb, 3);
+    }
+}
+
+void ConvertBGRToRGBA(std::span<const std::byte> source, std::span<std::byte> dest) {
+    u32 j = 0;
+    for (std::size_t i = 0; i < dest.size(); i += 4) {
+        dest[i] = source[j + 2];
+        dest[i + 1] = source[j + 1];
+        dest[i + 2] = source[j];
+        dest[i + 3] = std::byte{0xFF};
+        j += 3;
+    }
+}
+
+void ConvertRGBAToBGR(std::span<const std::byte> source, std::span<std::byte> dest) {
+    u32 j = 0;
+    for (std::size_t i = 0; i < dest.size(); i += 3) {
+        dest[i] = source[j + 2];
+        dest[i + 1] = source[j + 1];
+        dest[i + 2] = source[j];
+        j += 4;
+    }
+}
+
+void ConvertABGRToRGBA(std::span<const std::byte> source, std::span<std::byte> dest) {
+    for (u32 i = 0; i < dest.size(); i += 4) {
+        u32 abgr;
+        std::memcpy(&abgr, source.data() + i, sizeof(u32));
+        const u32 rgba = Common::swap32(abgr);
+        std::memcpy(dest.data() + i, &rgba, 4);
+    }
+}
+
+void ConvertRGBA4ToRGBA8(std::span<const std::byte> source, std::span<std::byte> dest) {
+    u32 j = 0;
+    for (std::size_t i = 0; i < dest.size(); i += 4) {
+        auto rgba = Common::Color::DecodeRGBA4(reinterpret_cast<const u8*>(source.data() + j));
+        std::memcpy(dest.data() + i, rgba.AsArray(), sizeof(rgba));
+        j += 2;
+    }
+}
+
+void ConvertRGBA8ToRGBA4(std::span<const std::byte> source, std::span<std::byte> dest) {
+    u32 j = 0;
+    for (std::size_t i = 0; i < dest.size(); i += 2) {
+        Common::Vec4<u8> rgba;
+        std::memcpy(rgba.AsArray(), source.data() + j, sizeof(rgba));
+        Common::Color::EncodeRGBA4(rgba, reinterpret_cast<u8*>(dest.data() + i));
+        j += 4;
+    }
+}
+
+void ConvertRGB5A1ToRGBA8(std::span<const std::byte> source, std::span<std::byte> dest) {
+    u32 j = 0;
+    for (std::size_t i = 0; i < dest.size(); i += 4) {
+        auto rgba = Common::Color::DecodeRGB5A1(reinterpret_cast<const u8*>(source.data() + j));
+        std::memcpy(dest.data() + i, rgba.AsArray(), sizeof(rgba));
+        j += 2;
+    }
+}
+
+void ConvertRGBA8ToRGB5A1(std::span<const std::byte> source, std::span<std::byte> dest) {
+    u32 j = 0;
+    for (std::size_t i = 0; i < dest.size(); i += 2) {
+        Common::Vec4<u8> rgba;
+        std::memcpy(rgba.AsArray(), source.data() + j, sizeof(rgba));
+        Common::Color::EncodeRGB5A1(rgba, reinterpret_cast<u8*>(dest.data() + i));
+        j += 4;
+    }
+}
+
+void ConvertD32S8ToD24S8(std::span<const std::byte> source, std::span<std::byte> dest) {
+    std::size_t depth_offset = 0;
+    std::size_t stencil_offset = 4 * source.size() / 5;
+    for (std::size_t i = 0; i < dest.size(); i += 4) {
+        float depth;
+        std::memcpy(&depth, source.data() + depth_offset, sizeof(float));
+        u32 depth_uint = depth * 0xFFFFFF;
+
+        dest[i] = source[stencil_offset];
+        std::memcpy(dest.data() + i + 1, &depth_uint, 3);
+
+        depth_offset += 4;
+        stencil_offset += 1;
+    }
+}
+
+void InterleaveD24S8(std::span<const std::byte> source, std::span<std::byte> dest) {
+    std::size_t depth_offset = 0;
+    std::size_t stencil_offset = 3 * source.size() / 4;
+    for (std::size_t i = 0; i < dest.size(); i += 4) {
+        dest[i] = source[stencil_offset];
+        std::memcpy(dest.data() + i + 1, source.data() + depth_offset, 3);
+        depth_offset += 3;
+        stencil_offset += 1;
+    }
+}
+
+void DeinterleaveD24S8(std::span<const std::byte> source, std::span<std::byte> dest) {
+    std::size_t depth_offset = 0;
+    std::size_t stencil_offset = 3 * source.size() / 4;
+    for (std::size_t i = 0; i < dest.size(); i += 4) {
+        dest[stencil_offset] = source[i];
+        std::memcpy(dest.data() + depth_offset, source.data() + i + 1, 3);
+        depth_offset += 3;
+        stencil_offset += 1;
+    }
 }
 
 } // namespace Pica::Texture

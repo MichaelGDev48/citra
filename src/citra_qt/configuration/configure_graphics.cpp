@@ -10,15 +10,28 @@
 #include "core/core.h"
 #include "core/settings.h"
 #include "ui_configure_graphics.h"
-#include "video_core/renderer_opengl/post_processing_opengl.h"
+#include "video_core/renderer_vulkan/vk_instance.h"
 
 ConfigureGraphics::ConfigureGraphics(QWidget* parent)
     : QWidget(parent), ui(std::make_unique<Ui::ConfigureGraphics>()) {
     ui->setupUi(this);
+    DiscoverPhysicalDevices();
     SetConfiguration();
 
-    ui->hw_renderer_group->setEnabled(ui->toggle_hw_renderer->isChecked());
-    ui->toggle_vsync_new->setEnabled(!Core::System::GetInstance().IsPoweredOn());
+    const bool not_running = !Core::System::GetInstance().IsPoweredOn();
+    const bool hw_renderer_enabled = ui->toggle_hw_renderer->isChecked();
+    ui->toggle_hw_renderer->setEnabled(not_running);
+    ui->hw_renderer_group->setEnabled(hw_renderer_enabled && not_running);
+    ui->toggle_vsync_new->setEnabled(not_running);
+    ui->graphics_api_combo->setEnabled(not_running);
+    ui->toggle_shader_jit->setEnabled(not_running);
+    ui->toggle_disk_shader_cache->setEnabled(hw_renderer_enabled && not_running);
+    ui->toggle_async_recording->setEnabled(hw_renderer_enabled && not_running);
+    ui->physical_device_combo->setEnabled(not_running);
+    SetPhysicalDeviceComboVisibility(ui->graphics_api_combo->currentIndex());
+
+    connect(ui->graphics_api_combo, qOverload<int>(&QComboBox::currentIndexChanged), this,
+            &ConfigureGraphics::SetPhysicalDeviceComboVisibility);
 
     connect(ui->toggle_hw_renderer, &QCheckBox::toggled, this, [this] {
         auto checked = ui->toggle_hw_renderer->isChecked();
@@ -31,7 +44,7 @@ ConfigureGraphics::ConfigureGraphics(QWidget* parent)
                                              ui->toggle_hw_shader->isChecked());
 
     connect(ui->toggle_hw_shader, &QCheckBox::toggled, this, [this] {
-        auto checked = ui->toggle_hw_shader->isChecked();
+        const bool checked = ui->toggle_hw_shader->isChecked();
         ui->hw_shader_group->setEnabled(checked);
         ui->toggle_disk_shader_cache->setEnabled(checked);
     });
@@ -69,6 +82,10 @@ void ConfigureGraphics::SetConfiguration() {
     ui->toggle_shader_jit->setChecked(Settings::values.use_shader_jit);
     ui->toggle_disk_shader_cache->setChecked(Settings::values.use_disk_shader_cache);
     ui->toggle_vsync_new->setChecked(Settings::values.use_vsync_new);
+    ui->graphics_api_combo->setCurrentIndex(static_cast<int>(Settings::values.graphics_api));
+    ui->physical_device_combo->setCurrentIndex(static_cast<int>(Settings::values.physical_device));
+    ui->toggle_async_recording->setChecked(Settings::values.async_command_recording);
+    ui->spirv_shader_gen->setChecked(Settings::values.spirv_shader_gen);
 }
 
 void ConfigureGraphics::ApplyConfiguration() {
@@ -79,8 +96,32 @@ void ConfigureGraphics::ApplyConfiguration() {
     Settings::values.use_shader_jit = ui->toggle_shader_jit->isChecked();
     Settings::values.use_disk_shader_cache = ui->toggle_disk_shader_cache->isChecked();
     Settings::values.use_vsync_new = ui->toggle_vsync_new->isChecked();
+    Settings::values.graphics_api =
+        static_cast<Settings::GraphicsAPI>(ui->graphics_api_combo->currentIndex());
+    Settings::values.physical_device = static_cast<u16>(ui->physical_device_combo->currentIndex());
+    Settings::values.async_command_recording = ui->toggle_async_recording->isChecked();
+    Settings::values.spirv_shader_gen = ui->spirv_shader_gen->isChecked();
 }
 
 void ConfigureGraphics::RetranslateUI() {
     ui->retranslateUi(this);
+}
+
+void ConfigureGraphics::DiscoverPhysicalDevices() {
+    Vulkan::Instance instance{};
+    const auto physical_devices = instance.GetPhysicalDevices();
+
+    ui->physical_device_combo->clear();
+    for (const vk::PhysicalDevice& physical_device : physical_devices) {
+        const QString name = QString::fromLocal8Bit(physical_device.getProperties().deviceName);
+        ui->physical_device_combo->addItem(name);
+    }
+}
+
+void ConfigureGraphics::SetPhysicalDeviceComboVisibility(int index) {
+    const auto graphics_api = static_cast<Settings::GraphicsAPI>(index);
+    const bool is_visible = graphics_api == Settings::GraphicsAPI::Vulkan;
+    ui->physical_device_label->setVisible(is_visible);
+    ui->physical_device_combo->setVisible(is_visible);
+    ui->spirv_shader_gen->setVisible(is_visible);
 }

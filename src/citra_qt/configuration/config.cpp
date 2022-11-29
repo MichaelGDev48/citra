@@ -328,6 +328,9 @@ void Config::ReadDebuggingValues() {
         qt_config->value(QStringLiteral("record_frame_times"), false).toBool();
     Settings::values.use_gdbstub = ReadSetting(QStringLiteral("use_gdbstub"), false).toBool();
     Settings::values.gdbstub_port = ReadSetting(QStringLiteral("gdbstub_port"), 24689).toInt();
+    Settings::values.renderer_debug = ReadSetting(QStringLiteral("renderer_debug"), false).toBool();
+    Settings::values.dump_command_buffers =
+        ReadSetting(QStringLiteral("dump_command_buffers"), false).toBool();
 
     qt_config->beginGroup(QStringLiteral("LLE"));
     for (const auto& service_module : Service::service_module_map) {
@@ -481,6 +484,12 @@ void Config::ReadPathValues() {
 void Config::ReadRendererValues() {
     qt_config->beginGroup(QStringLiteral("Renderer"));
 
+    Settings::values.graphics_api = static_cast<Settings::GraphicsAPI>(
+        ReadSetting(QStringLiteral("graphics_api"), static_cast<u32>(Settings::GraphicsAPI::OpenGL))
+            .toUInt());
+    Settings::values.physical_device = ReadSetting(QStringLiteral("physical_device"), 0).toUInt();
+    Settings::values.async_command_recording = ReadSetting(QStringLiteral("async_command_recording"), true).toBool();
+    Settings::values.spirv_shader_gen = ReadSetting(QStringLiteral("spirv_shader_gen"), false).toBool();
     Settings::values.use_hw_renderer =
         ReadSetting(QStringLiteral("use_hw_renderer"), true).toBool();
     Settings::values.use_hw_shader = ReadSetting(QStringLiteral("use_hw_shader"), true).toBool();
@@ -888,6 +897,9 @@ void Config::SaveDebuggingValues() {
     qt_config->setValue(QStringLiteral("record_frame_times"), Settings::values.record_frame_times);
     WriteSetting(QStringLiteral("use_gdbstub"), Settings::values.use_gdbstub, false);
     WriteSetting(QStringLiteral("gdbstub_port"), Settings::values.gdbstub_port, 24689);
+    WriteSetting(QStringLiteral("renderer_debug"), Settings::values.renderer_debug, false);
+    WriteSetting(QStringLiteral("dump_command_buffers"), Settings::values.dump_command_buffers,
+                 false);
 
     qt_config->beginGroup(QStringLiteral("LLE"));
     for (const auto& service_module : Settings::values.lle_modules) {
@@ -998,6 +1010,11 @@ void Config::SavePathValues() {
 void Config::SaveRendererValues() {
     qt_config->beginGroup(QStringLiteral("Renderer"));
 
+    WriteSetting(QStringLiteral("graphics_api"), static_cast<u32>(Settings::values.graphics_api),
+                 static_cast<u32>(Settings::GraphicsAPI::OpenGL));
+    WriteSetting(QStringLiteral("physical_device"), Settings::values.physical_device, 0);
+    WriteSetting(QStringLiteral("async_command_recording"), Settings::values.async_command_recording, true);
+    WriteSetting(QStringLiteral("spirv_shader_gen"), Settings::values.spirv_shader_gen, false);
     WriteSetting(QStringLiteral("use_hw_renderer"), Settings::values.use_hw_renderer, true);
     WriteSetting(QStringLiteral("use_hw_shader"), Settings::values.use_hw_shader, true);
 #ifdef __APPLE__

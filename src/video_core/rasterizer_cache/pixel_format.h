@@ -3,16 +3,17 @@
 // Refer to the license.txt file included.
 
 #pragma once
+
 #include <string_view>
 #include "core/hw/gpu.h"
 #include "video_core/regs_framebuffer.h"
 #include "video_core/regs_texturing.h"
 
-namespace OpenGL {
+namespace VideoCore {
 
 constexpr u32 PIXEL_FORMAT_COUNT = 18;
 
-enum class PixelFormat : u8 {
+enum class PixelFormat : u32 {
     // First 5 formats are shared between textures and color buffers
     RGBA8 = 0,
     RGB8 = 1,
@@ -180,12 +181,12 @@ constexpr u32 GetFormatBpp(PixelFormat format) {
     case PixelFormat::ETC1:
         return 4;
     default:
-        return 0;
+        return 1;
     }
 }
 
 constexpr u32 GetBytesPerPixel(PixelFormat format) {
-    // OpenGL needs 4 bpp alignment for D24 since using GL_UNSIGNED_INT as type
+    // Modern GPUs need 4 bpp alignment for D24
     if (format == PixelFormat::D24 || GetFormatType(format) == SurfaceType::Texture) {
         return 4;
     }
@@ -193,4 +194,4 @@ constexpr u32 GetBytesPerPixel(PixelFormat format) {
     return GetFormatBpp(format) / 8;
 }
 
-} // namespace OpenGL
+} // namespace VideoCore

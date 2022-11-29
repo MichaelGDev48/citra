@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>400</width>
-    <height>430</height>
+    <height>513</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -20,6 +20,66 @@
    <string>Form</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QGroupBox" name="apiBox">
+     <property name="title">
+      <string>API Settings</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_3">
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout">
+        <item>
+         <widget class="QLabel" name="graphics_api_label">
+          <property name="text">
+           <string>Graphics API</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="graphics_api_combo">
+          <item>
+           <property name="text">
+            <string>OpenGL</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>OpenGLES</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Vulkan</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_3">
+        <item>
+         <widget class="QLabel" name="physical_device_label">
+          <property name="text">
+           <string>Physical device</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="physical_device_combo"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="spirv_shader_gen">
+        <property name="text">
+         <string>SPIR-V Shader Generation</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
    <item>
     <widget class="QGroupBox" name="rendererBox">
      <property name="title">
@@ -118,6 +178,16 @@
       <string>Advanced</string>
      </property>
      <layout class="QVBoxLayout" name="verticalLayout_2">
+      <item>
+       <widget class="QCheckBox" name="toggle_async_recording">
+        <property name="toolTip">
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Offloads command buffer recording and fragment shader generation to a worker thread. Can improve performance especially on weaker systems. Disable if you notice better performance. If unsure leave it enabled,&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <property name="text">
+         <string>Async Command Recording</string>
+        </property>
+       </widget>
+      </item>
       <item>
        <widget class="QCheckBox" name="toggle_disk_shader_cache">
         <property name="toolTip">

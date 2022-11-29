@@ -7,10 +7,7 @@
 #include <regex>
 #include <string>
 #include <thread>
-
 // This needs to be included before getopt.h because the latter #defines symbols used by it
-#include "common/microprofile.h"
-
 #include "citra/config.h"
 #include "citra/emu_window/emu_window_sdl2.h"
 #include "citra/lodepng_image_interface.h"
@@ -18,21 +15,17 @@
 #include "common/detached_tasks.h"
 #include "common/file_util.h"
 #include "common/logging/backend.h"
-#include "common/logging/filter.h"
 #include "common/logging/log.h"
+#include "common/microprofile.h"
 #include "common/scm_rev.h"
 #include "common/scope_exit.h"
 #include "common/string_util.h"
 #include "core/core.h"
 #include "core/dumping/backend.h"
-#include "core/file_sys/cia_container.h"
 #include "core/frontend/applets/default_applets.h"
 #include "core/frontend/framebuffer_layout.h"
-#include "core/frontend/scope_acquire_context.h"
-#include "core/gdbstub/gdbstub.h"
 #include "core/hle/service/am/am.h"
 #include "core/hle/service/cfg/cfg.h"
-#include "core/loader/loader.h"
 #include "core/movie.h"
 #include "core/settings.h"
 #include "input_common/main.h"
@@ -368,7 +361,7 @@ int main(int argc, char** argv) {
     const auto secondary_window =
         use_secondary_window ? std::make_unique<EmuWindow_SDL2>(false, true) : nullptr;
 
-    Frontend::ScopeAcquireContext scope(*emu_window);
+    const auto scope = emu_window->Acquire();
 
     LOG_INFO(Frontend, "Citra Version: {} | {}-{}", Common::g_build_fullname, Common::g_scm_branch,
              Common::g_scm_desc);

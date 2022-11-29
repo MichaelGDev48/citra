@@ -6,14 +6,20 @@
 
 #include <array>
 #include <climits>
+#include <boost/icl/interval_map.hpp>
+#include <boost/icl/interval_set.hpp>
+#include "common/math_util.h"
 #include "video_core/rasterizer_cache/pixel_format.h"
-#include "video_core/rasterizer_cache/rasterizer_cache_types.h"
 
-namespace OpenGL {
+namespace VideoCore {
+
+using SurfaceInterval = boost::icl::right_open_interval<PAddr>;
+
+enum class TextureType { Texture2D = 0, CubeMap = 1 };
 
 class SurfaceParams {
 public:
-    // Surface match traits
+    /// Surface match traits
     bool ExactMatch(const SurfaceParams& other_surface) const;
     bool CanSubRect(const SurfaceParams& sub_surface) const;
     bool CanExpand(const SurfaceParams& expanded_surface) const;
@@ -22,12 +28,9 @@ public:
     Common::Rectangle<u32> GetSubRect(const SurfaceParams& sub_surface) const;
     Common::Rectangle<u32> GetScaledSubRect(const SurfaceParams& sub_surface) const;
 
-    // Returns the outer rectangle containing "interval"
+    /// Returns the outer rectangle containing "interval"
     SurfaceParams FromInterval(SurfaceInterval interval) const;
     SurfaceInterval GetSubRectInterval(Common::Rectangle<u32> unscaled_rect) const;
-
-    // Returns the region of the biggest valid rectange within interval
-    SurfaceInterval GetCopyableInterval(const Surface& src_surface) const;
 
     /// Updates remaining members from the already set addr, width, height and pixel_format
     void UpdateParams() {
@@ -41,12 +44,16 @@ public:
         end = addr + size;
     }
 
+    bool IsScaled() const {
+        return res_scale > 1;
+    }
+
     SurfaceInterval GetInterval() const {
         return SurfaceInterval(addr, end);
     }
 
     u32 GetFormatBpp() const {
-        return OpenGL::GetFormatBpp(pixel_format);
+        return VideoCore::GetFormatBpp(pixel_format);
     }
 
     u32 GetScaledWidth() const {
@@ -84,8 +91,9 @@ public:
     u16 res_scale = 1;
 
     bool is_tiled = false;
+    TextureType texture_type = TextureType::Texture2D;
     PixelFormat pixel_format = PixelFormat::Invalid;
     SurfaceType type = SurfaceType::Invalid;
 };
 
-} // namespace OpenGL
+} // namespace VideoCore

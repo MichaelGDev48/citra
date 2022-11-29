@@ -60,6 +60,19 @@ endif()
 # Glad
 add_subdirectory(glad)
 
+# glslang
+set(SKIP_GLSLANG_INSTALL ON)
+set(ENABLE_GLSLANG_BINARIES OFF)
+set(ENABLE_SPVREMAPPER OFF)
+set(ENABLE_CTEST OFF)
+add_subdirectory(glslang)
+
+# Sirit
+add_subdirectory(sirit)
+
+# glm
+add_subdirectory(glm)
+
 # inih
 add_subdirectory(inih)
 
@@ -154,3 +167,12 @@ if(ANDROID)
     add_subdirectory(libyuv)
     target_include_directories(yuv INTERFACE ./libyuv/include)
 endif()
+
+# VMA
+add_library(vma INTERFACE)
+target_include_directories(vma INTERFACE ./vma)
+
+# vulkan-headers
+add_library(vulkan-headers INTERFACE)
+target_include_directories(vulkan-headers INTERFACE ./vulkan-headers/include)
+

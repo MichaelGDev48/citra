@@ -9,10 +9,6 @@
 #include "common/common_types.h"
 #include "core/hw/gpu.h"
 
-namespace OpenGL {
-struct ScreenInfo;
-}
-
 namespace Pica::Shader {
 struct OutputVertex;
 } // namespace Pica::Shader
@@ -29,7 +25,7 @@ using DiskResourceLoadCallback = std::function<void(LoadCallbackStage, std::size
 
 class RasterizerInterface {
 public:
-    virtual ~RasterizerInterface() {}
+    virtual ~RasterizerInterface() = default;
 
     /// Queues the primitive formed by the given vertices for rendering
     virtual void AddTriangle(const Pica::Shader::OutputVertex& v0,
@@ -73,21 +69,19 @@ public:
         return false;
     }
 
-    /// Attempt to use a faster method to display the framebuffer to screen
-    virtual bool AccelerateDisplay(const GPU::Regs::FramebufferConfig& config,
-                                   PAddr framebuffer_addr, u32 pixel_stride,
-                                   OpenGL::ScreenInfo& screen_info) {
-        return false;
-    }
-
     /// Attempt to draw using hardware shaders
     virtual bool AccelerateDrawBatch(bool is_indexed) {
         return false;
     }
 
+    /// Increase/decrease the number of surface in pages touching the specified region
+    virtual void UpdatePagesCachedCount(PAddr addr, u32 size, int delta) {}
+
+    /// Loads disk cached rasterizer data before rendering
     virtual void LoadDiskResources(const std::atomic_bool& stop_loading,
                                    const DiskResourceLoadCallback& callback) {}
 
+    /// Synchronizes the graphics API state with the PICA state
     virtual void SyncEntireState() {}
 };
 } // namespace VideoCore

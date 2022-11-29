@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>443</width>
-    <height>300</height>
+    <width>454</width>
+    <height>356</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -119,6 +119,23 @@
         </property>
         <property name="text">
          <string>Enable CPU JIT</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="toggle_renderer_debug">
+        <property name="toolTip">
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Enables debug reporting in the currently selected graphics API. Causes measurable performance loss, don't enable unless for debugging purposes&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+        </property>
+        <property name="text">
+         <string>Enable debug renderer</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="toggle_dump_command_buffers">
+        <property name="text">
+         <string>Dump command buffers</string>
         </property>
        </widget>
       </item>

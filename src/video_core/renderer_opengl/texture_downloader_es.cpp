@@ -6,8 +6,9 @@
 #include <vector>
 #include <fmt/chrono.h>
 #include "common/logging/log.h"
-#include "video_core/rasterizer_cache/rasterizer_cache_utils.h"
+#include "video_core/rasterizer_cache/utils.h"
 #include "video_core/renderer_opengl/gl_state.h"
+#include "video_core/renderer_opengl/gl_texture_runtime.h"
 #include "video_core/renderer_opengl/texture_downloader_es.h"
 
 #include "shaders/depth_to_color.frag"
@@ -16,9 +17,16 @@
 
 namespace OpenGL {
 
-/**
- * Self tests for the texture downloader
- */
+static constexpr std::array DEPTH_TUPLES_HACK = {
+    FormatTuple{GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT},              // D16
+    FormatTuple{}, FormatTuple{GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT}, // D24
+    FormatTuple{GL_DEPTH24_STENCIL8, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8},              // D24S8
+};
+
+const FormatTuple& GetFormatTuple(VideoCore::PixelFormat format) {
+    return DEPTH_TUPLES_HACK[static_cast<u32>(format)];
+}
+
 void TextureDownloaderES::Test() {
     auto cur_state = OpenGLState::GetCurState();
     OpenGLState state;
@@ -39,8 +47,8 @@ void TextureDownloaderES::Test() {
     }
     glActiveTexture(GL_TEXTURE0);
 
-    const auto test = [this, &state](FormatTuple tuple, auto original_data, std::size_t tex_size,
-                                     auto data_generator) {
+    const auto test = [this, &state]<typename T>(FormatTuple tuple, std::vector<T> original_data,
+                                                 std::size_t tex_size, auto data_generator) {
         OGLTexture texture;
         texture.Create();
         state.texture_units[0].texture_2d = texture.handle;
@@ -55,7 +63,7 @@ void TextureDownloaderES::Test() {
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tex_sizei, tex_sizei, tuple.format, tuple.type,
                         original_data.data());
 
-        decltype(original_data) new_data(original_data.size());
+        std::vector<T> new_data(original_data.size());
         glFinish();
         auto start = std::chrono::high_resolution_clock::now();
         GetTexImage(GL_TEXTURE_2D, 0, tuple.format, tuple.type, tex_sizei, tex_sizei,
@@ -75,13 +83,13 @@ void TextureDownloaderES::Test() {
             }
     };
     LOG_INFO(Render_OpenGL, "GL_DEPTH24_STENCIL8 download test starting");
-    test(GetFormatTuple(PixelFormat::D24S8), std::vector<u32>{}, 4096,
+    test(GetFormatTuple(VideoCore::PixelFormat::D24S8), std::vector<u32>{}, 4096,
          [](std::size_t idx) { return static_cast<u32>((idx << 8) | (idx & 0xFF)); });
     LOG_INFO(Render_OpenGL, "GL_DEPTH_COMPONENT24 download test starting");
-    test(GetFormatTuple(PixelFormat::D24), std::vector<u32>{}, 4096,
+    test(GetFormatTuple(VideoCore::PixelFormat::D24), std::vector<u32>{}, 4096,
          [](std::size_t idx) { return static_cast<u32>(idx << 8); });
     LOG_INFO(Render_OpenGL, "GL_DEPTH_COMPONENT16 download test starting");
-    test(GetFormatTuple(PixelFormat::D16), std::vector<u16>{}, 256,
+    test(GetFormatTuple(VideoCore::PixelFormat::D16), std::vector<u16>{}, 256,
          [](std::size_t idx) { return static_cast<u16>(idx); });
 
     cur_state.Apply();
@@ -131,35 +139,30 @@ void main(){
     state.draw.draw_framebuffer = depth32_fbo.handle;
     state.renderbuffer = r32ui_renderbuffer.handle;
     state.Apply();
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_R32UI, max_size, max_size);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_R32UI, MAX_SIZE, MAX_SIZE);
     glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
                               r32ui_renderbuffer.handle);
-    glUniform1i(glGetUniformLocation(d24s8_r32ui_conversion_shader.program.handle, "depth"), 1);
 
     state.draw.draw_framebuffer = depth16_fbo.handle;
     state.renderbuffer = r16_renderbuffer.handle;
     state.Apply();
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_R16, max_size, max_size);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_R16, MAX_SIZE, MAX_SIZE);
     glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
                               r16_renderbuffer.handle);
 
     cur_state.Apply();
 }
 
-/**
- * OpenGL ES does not support glReadBuffer for depth/stencil formats
- * This gets around it by converting to a Red surface before downloading
- */
 GLuint TextureDownloaderES::ConvertDepthToColor(GLuint level, GLenum& format, GLenum& type,
-                                                GLint height, GLint width) {
-    ASSERT(width <= max_size && height <= max_size);
+                                                GLint height, GLint width) const {
+    ASSERT(width <= MAX_SIZE && height <= MAX_SIZE);
     const OpenGLState cur_state = OpenGLState::GetCurState();
     OpenGLState state;
     state.texture_units[0] = {cur_state.texture_units[0].texture_2d, sampler.handle};
     state.draw.vertex_array = vao.handle;
 
     OGLTexture texture_view;
-    const ConversionShader* converter;
+    const ConversionShader* converter = nullptr;
     switch (type) {
     case GL_UNSIGNED_SHORT:
         state.draw.draw_framebuffer = depth16_fbo.handle;
@@ -180,6 +183,7 @@ GLuint TextureDownloaderES::ConvertDepthToColor(GLuint level, GLenum& format, GL
     default:
         UNREACHABLE_MSG("Destination type not recognized");
     }
+
     state.draw.shader_program = converter->program.handle;
     state.viewport = {0, 0, width, height};
     state.Apply();
@@ -198,15 +202,8 @@ GLuint TextureDownloaderES::ConvertDepthToColor(GLuint level, GLenum& format, GL
     return state.draw.draw_framebuffer;
 }
 
-/**
- * OpenGL ES does not support glGetTexImage. Obtain the pixels by attaching the
- * texture to a framebuffer.
- * Originally from https://github.com/apitrace/apitrace/blob/master/retrace/glstate_images.cpp
- * Depth texture download assumes that the texture's format tuple matches what is found
- * OpenGL::depth_format_tuples
- */
 void TextureDownloaderES::GetTexImage(GLenum target, GLuint level, GLenum format, GLenum type,
-                                      GLint height, GLint width, void* pixels) {
+                                      GLint height, GLint width, void* pixels) const {
     OpenGLState state = OpenGLState::GetCurState();
     GLuint texture{};
     const GLuint old_read_buffer = state.draw.read_framebuffer;

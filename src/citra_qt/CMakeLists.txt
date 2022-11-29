@@ -244,6 +244,8 @@ if (APPLE)
     set_target_properties(citra-qt PROPERTIES MACOSX_BUNDLE TRUE)
     set_target_properties(citra-qt PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist)
     target_sources(citra-qt PRIVATE
+        applesurfacehelper.h
+        applesurfacehelper.mm
         macos_authorization.h
         macos_authorization.mm
     )
@@ -260,8 +262,12 @@ endif()
 create_target_directory_groups(citra-qt)
 
 target_link_libraries(citra-qt PRIVATE audio_core common core input_common network video_core)
-target_link_libraries(citra-qt PRIVATE Boost::boost glad nihstro-headers Qt5::Widgets Qt5::Multimedia)
+target_link_libraries(citra-qt PRIVATE Boost::boost glad vma vulkan-headers nihstro-headers Qt5::Widgets Qt5::Multimedia)
 target_link_libraries(citra-qt PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads)
+
+if (NOT WIN32)
+    target_include_directories(citra-qt PRIVATE ${Qt5Gui_PRIVATE_INCLUDE_DIRS})
+endif()
 
 target_compile_definitions(citra-qt PRIVATE
     # Use QStringBuilder for string concatenation to reduce

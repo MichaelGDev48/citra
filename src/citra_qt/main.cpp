@@ -17,12 +17,6 @@
 #include <QtGui>
 #include <QtWidgets>
 #include <fmt/format.h>
-#ifdef __APPLE__
-#include <unistd.h> // for chdir
-#endif
-#ifdef _WIN32
-#include <windows.h>
-#endif
 #include "citra_qt/aboutdialog.h"
 #include "citra_qt/applets/mii_selector.h"
 #include "citra_qt/applets/swkbd.h"
@@ -63,13 +57,12 @@
 #include "common/file_util.h"
 #include "common/literals.h"
 #include "common/logging/backend.h"
-#include "common/logging/filter.h"
 #include "common/logging/log.h"
-#include "common/logging/text_formatter.h"
 #include "common/memory_detect.h"
 #include "common/microprofile.h"
 #include "common/scm_rev.h"
 #include "common/scope_exit.h"
+#include "common/string_util.h"
 #ifdef ARCHITECTURE_x86_64
 #include "common/x64/cpu_detect.h"
 #endif
@@ -78,8 +71,6 @@
 #include "core/file_sys/archive_extsavedata.h"
 #include "core/file_sys/archive_source_sd_savedata.h"
 #include "core/frontend/applets/default_applets.h"
-#include "core/frontend/scope_acquire_context.h"
-#include "core/gdbstub/gdbstub.h"
 #include "core/hle/service/fs/archive.h"
 #include "core/hle/service/nfc/nfc.h"
 #include "core/loader/loader.h"
@@ -90,8 +81,14 @@
 #include "input_common/main.h"
 #include "network/network_settings.h"
 #include "ui_main.h"
-#include "video_core/renderer_base.h"
 #include "video_core/video_core.h"
+
+#ifdef __APPLE__
+#include <unistd.h> // for chdir
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #ifdef USE_DISCORD_PRESENCE
 #include "citra_qt/discord_impl.h"
@@ -293,7 +290,6 @@ void GMainWindow::InitializeWidgets() {
     // Create status bar
     message_label = new QLabel();
     // Configured separately for left alignment
-    message_label->setVisible(false);
     message_label->setFrameStyle(QFrame::NoFrame);
     message_label->setContentsMargins(4, 0, 4, 0);
     message_label->setAlignment(Qt::AlignLeft);
@@ -318,10 +314,28 @@ void GMainWindow::InitializeWidgets() {
         label->setVisible(false);
         label->setFrameStyle(QFrame::NoFrame);
         label->setContentsMargins(4, 0, 4, 0);
-        statusBar()->addPermanentWidget(label, 0);
+        statusBar()->addPermanentWidget(label);
     }
-    statusBar()->addPermanentWidget(multiplayer_state->GetStatusText(), 0);
-    statusBar()->addPermanentWidget(multiplayer_state->GetStatusIcon(), 0);
+
+    // Setup Graphics API button
+    graphics_api_button = new QPushButton();
+    graphics_api_button->setObjectName(QStringLiteral("GraphicsAPIStatusBarButton"));
+    graphics_api_button->setFocusPolicy(Qt::NoFocus);
+    UpdateAPIIndicator(false);
+
+    connect(graphics_api_button, &QPushButton::clicked, this, [this] {
+        if (emulation_running) {
+            return;
+        }
+
+        UpdateAPIIndicator(true);
+    });
+
+    statusBar()->insertPermanentWidget(0, graphics_api_button);
+
+    statusBar()->addPermanentWidget(multiplayer_state->GetStatusText());
+    statusBar()->addPermanentWidget(multiplayer_state->GetStatusIcon());
+
     statusBar()->setVisible(true);
 
     // Removes an ugly inner border from the status bar widgets under Linux
@@ -961,16 +975,7 @@ bool GMainWindow::LoadROM(const QString& filename) {
     render_window->InitRenderTarget();
     secondary_window->InitRenderTarget();
 
-    Frontend::ScopeAcquireContext scope(*render_window);
-
-    const QString below_gl43_title = tr("OpenGL 4.3 Unsupported");
-    const QString below_gl43_message = tr("Your GPU may not support OpenGL 4.3, or you do not "
-                                          "have the latest graphics driver.");
-
-    if (!QOpenGLContext::globalShareContext()->versionFunctions<QOpenGLFunctions_4_3_Core>()) {
-        QMessageBox::critical(this, below_gl43_title, below_gl43_message);
-        return false;
-    }
+    const auto scope = render_window->Acquire();
 
     Core::System& system{Core::System::GetInstance()};
 
@@ -1024,7 +1029,7 @@ bool GMainWindow::LoadROM(const QString& filename) {
         case Core::System::ResultStatus::ErrorVideoCore:
             QMessageBox::critical(
                 this, tr("Video Core Error"),
-                tr("An error has occurred. Please <a "
+                tr("An error has occurred during intialization of the video backend. Please <a "
                    "href='https://community.citra-emu.org/t/how-to-upload-the-log-file/296'>see "
                    "the "
                    "log</a> for more details. "
@@ -1037,10 +1042,6 @@ bool GMainWindow::LoadROM(const QString& filename) {
                 tr("You are running default Windows drivers "
                    "for your GPU. You need to install the "
                    "proper drivers for your graphics card from the manufacturer's website."));
-            break;
-
-        case Core::System::ResultStatus::ErrorVideoCore_ErrorBelowGL43:
-            QMessageBox::critical(this, below_gl43_title, below_gl43_message);
             break;
 
         default:
@@ -1258,7 +1259,6 @@ void GMainWindow::ShutdownGame() {
 
     // Disable status bar updates
     status_bar_update_timer.stop();
-    message_label->setVisible(false);
     message_label_used_for_movie = false;
     emu_speed_label->setVisible(false);
     game_fps_label->setVisible(false);
@@ -1398,26 +1398,35 @@ void GMainWindow::OnGameListOpenFolder(u64 data_id, GameListOpenTarget target) {
         path = Service::AM::GetTitlePath(media_type, data_id) + "content/";
         break;
     }
-    case GameListOpenTarget::UPDATE_DATA:
+    case GameListOpenTarget::UPDATE_DATA: {
         open_target = "Update Data";
         path = Service::AM::GetTitlePath(Service::FS::MediaType::SDMC, data_id + 0xe00000000) +
                "content/";
         break;
-    case GameListOpenTarget::TEXTURE_DUMP:
+    }
+    case GameListOpenTarget::TEXTURE_DUMP: {
         open_target = "Dumped Textures";
         path = fmt::format("{}textures/{:016X}/",
                            FileUtil::GetUserPath(FileUtil::UserPath::DumpDir), data_id);
         break;
-    case GameListOpenTarget::TEXTURE_LOAD:
+    }
+    case GameListOpenTarget::TEXTURE_LOAD: {
         open_target = "Custom Textures";
         path = fmt::format("{}textures/{:016X}/",
                            FileUtil::GetUserPath(FileUtil::UserPath::LoadDir), data_id);
         break;
-    case GameListOpenTarget::MODS:
+    }
+    case GameListOpenTarget::MODS: {
         open_target = "Mods";
         path = fmt::format("{}mods/{:016X}/", FileUtil::GetUserPath(FileUtil::UserPath::LoadDir),
                            data_id);
         break;
+    }
+    case GameListOpenTarget::SHADER_CACHE: {
+        open_target = "Shader Cache";
+        path = FileUtil::GetUserPath(FileUtil::UserPath::ShaderDir);
+        break;
+    }
     default:
         LOG_ERROR(Frontend, "Unexpected target {}", static_cast<int>(target));
         return;
@@ -1894,6 +1903,7 @@ void GMainWindow::OnConfigure() {
             setMouseTracking(false);
         }
         UpdateSecondaryWindowVisibility();
+        UpdateAPIIndicator(false);
     } else {
         Settings::values.input_profiles = old_input_profiles;
         Settings::values.touch_from_button_maps = old_touch_from_button_maps;
@@ -2207,6 +2217,26 @@ void GMainWindow::ShowMouseCursor() {
     }
 }
 
+void GMainWindow::UpdateAPIIndicator(bool override) {
+    static std::array graphics_apis = {QStringLiteral("OPENGL"), QStringLiteral("OPENGLES"),
+                                       QStringLiteral("VULKAN")};
+
+    static std::array graphics_api_colors = {QStringLiteral("#00ccdd"), QStringLiteral("#ba2a8d"),
+                                             QStringLiteral("#91242a")};
+
+    u32 api_index = static_cast<u32>(Settings::values.graphics_api);
+    if (override) {
+        api_index = (api_index + 1) % graphics_apis.size();
+        Settings::values.graphics_api = static_cast<Settings::GraphicsAPI>(api_index);
+    }
+
+    const QString style_sheet = QStringLiteral("QPushButton { font-weight: bold; color: %0; }")
+                                    .arg(graphics_api_colors[api_index]);
+
+    graphics_api_button->setText(graphics_apis[api_index]);
+    graphics_api_button->setStyleSheet(style_sheet);
+}
+
 void GMainWindow::OnMouseActivity() {
     ShowMouseCursor();
 }
@@ -2394,8 +2424,16 @@ void GMainWindow::UpdateUITheme() {
     QStringList theme_paths(default_theme_paths);
 
     if (is_default_theme || current_theme.isEmpty()) {
-        qApp->setStyleSheet({});
-        setStyleSheet({});
+        const QString theme_uri(QStringLiteral(":default/style.qss"));
+        QFile f(theme_uri);
+        if (f.open(QFile::ReadOnly | QFile::Text)) {
+            QTextStream ts(&f);
+            qApp->setStyleSheet(ts.readAll());
+            setStyleSheet(ts.readAll());
+        } else {
+            qApp->setStyleSheet({});
+            setStyleSheet({});
+        }
         theme_paths.append(default_icons);
         QIcon::setThemeName(default_icons);
     } else {
@@ -2543,14 +2581,6 @@ int main(int argc, char* argv[]) {
     // Init settings params
     QCoreApplication::setOrganizationName(QStringLiteral("Citra team"));
     QCoreApplication::setApplicationName(QStringLiteral("Citra"));
-
-    QSurfaceFormat format;
-    format.setVersion(4, 3);
-    format.setProfile(QSurfaceFormat::CoreProfile);
-    format.setSwapInterval(0);
-    // TODO: expose a setting for buffer value (ie default/single/double/triple)
-    format.setSwapBehavior(QSurfaceFormat::DefaultSwapBehavior);
-    QSurfaceFormat::setDefaultFormat(format);
 
 #ifdef __APPLE__
     std::string bin_path = FileUtil::GetBundleDirectory() + DIR_SEP + "..";

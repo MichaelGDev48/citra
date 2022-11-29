@@ -8,6 +8,7 @@
 #include "core/hw/gpu.h"
 #include "video_core/renderer_base.h"
 #include "video_core/renderer_opengl/frame_dumper_opengl.h"
+#include "video_core/renderer_opengl/gl_driver.h"
 #include "video_core/renderer_opengl/gl_resource_manager.h"
 #include "video_core/renderer_opengl/gl_state.h"
 
@@ -24,8 +25,8 @@ struct Frame {
     OpenGL::OGLRenderbuffer color{};  /// Buffer shared between the render/present FBO
     OpenGL::OGLFramebuffer render{};  /// FBO created on the render thread
     OpenGL::OGLFramebuffer present{}; /// FBO created on the present thread
-    GLsync render_fence{};            /// Fence created on the render thread
-    GLsync present_fence{};           /// Fence created on the presentation thread
+    OpenGL::OGLSync render_fence{};   /// Fence created on the render thread
+    OpenGL::OGLSync present_fence{};  /// Fence created on the presentation thread
 };
 } // namespace Frontend
 
@@ -54,18 +55,16 @@ struct PresentationTexture {
     OGLTexture texture;
 };
 
+class RasterizerOpenGL;
+
 class RendererOpenGL : public RendererBase {
 public:
     explicit RendererOpenGL(Frontend::EmuWindow& window, Frontend::EmuWindow* secondary_window);
     ~RendererOpenGL() override;
 
-    /// Initialize the renderer
     VideoCore::ResultStatus Init() override;
-
-    /// Shutdown the renderer
+    VideoCore::RasterizerInterface* Rasterizer() override;
     void ShutDown() override;
-
-    /// Finalizes rendering the guest frame
     void SwapBuffers() override;
 
     /// Draws the latest frame from texture mailbox to the currently bound draw framebuffer in this
@@ -74,9 +73,8 @@ public:
 
     /// Prepares for video dumping (e.g. create necessary buffers, etc)
     void PrepareVideoDumping() override;
-
-    /// Cleans up after video dumping is ended
     void CleanupVideoDumping() override;
+    void Sync() override;
 
 private:
     void InitOpenGLObjects();
@@ -104,7 +102,10 @@ private:
     // Fills active OpenGL texture with the given RGB color.
     void LoadColorToActiveGLTexture(u8 color_r, u8 color_g, u8 color_b, const TextureInfo& texture);
 
+private:
+    Driver driver;
     OpenGLState state;
+    std::unique_ptr<RasterizerOpenGL> rasterizer;
 
     // OpenGL object IDs
     OGLVertexArray vertex_array;

@@ -12,6 +12,8 @@ add_library(video_core STATIC
     pica_types.h
     primitive_assembly.cpp
     primitive_assembly.h
+    rasterizer_accelerated.cpp
+    rasterizer_accelerated.h
     rasterizer_interface.h
     regs.cpp
     regs.h
@@ -23,21 +25,19 @@ add_library(video_core STATIC
     regs_texturing.h
     renderer_base.cpp
     renderer_base.h
-    rasterizer_cache/cached_surface.cpp
-    rasterizer_cache/cached_surface.h
     rasterizer_cache/morton_swizzle.h
     rasterizer_cache/pixel_format.h
     rasterizer_cache/rasterizer_cache.cpp
     rasterizer_cache/rasterizer_cache.h
-    rasterizer_cache/rasterizer_cache_types.h
-    rasterizer_cache/rasterizer_cache_utils.cpp
-    rasterizer_cache/rasterizer_cache_utils.h
+    rasterizer_cache/surface_base.h
+    rasterizer_cache/utils.cpp
+    rasterizer_cache/utils.h
     rasterizer_cache/surface_params.cpp
     rasterizer_cache/surface_params.h
-    rasterizer_cache/texture_runtime.cpp
-    rasterizer_cache/texture_runtime.h
     renderer_opengl/frame_dumper_opengl.cpp
     renderer_opengl/frame_dumper_opengl.h
+    renderer_opengl/gl_driver.cpp
+    renderer_opengl/gl_driver.h
     renderer_opengl/gl_rasterizer.cpp
     renderer_opengl/gl_rasterizer.h
     renderer_opengl/gl_resource_manager.cpp
@@ -56,6 +56,8 @@ add_library(video_core STATIC
     renderer_opengl/gl_state.h
     renderer_opengl/gl_stream_buffer.cpp
     renderer_opengl/gl_stream_buffer.h
+    renderer_opengl/gl_texture_runtime.cpp
+    renderer_opengl/gl_texture_runtime.h
     renderer_opengl/gl_vars.cpp
     renderer_opengl/gl_vars.h
     renderer_opengl/pica_to_gl.h
@@ -81,11 +83,54 @@ add_library(video_core STATIC
     #temporary, move these back in alphabetical order before merging
     renderer_opengl/gl_format_reinterpreter.cpp
     renderer_opengl/gl_format_reinterpreter.h
+    renderer_vulkan/pica_to_vk.h
+    renderer_vulkan/renderer_vulkan.cpp
+    renderer_vulkan/renderer_vulkan.h
+    renderer_vulkan/vk_blit_helper.cpp
+    renderer_vulkan/vk_blit_helper.h
+    renderer_vulkan/vk_common.cpp
+    renderer_vulkan/vk_common.h
+    renderer_vulkan/vk_descriptor_manager.cpp
+    renderer_vulkan/vk_descriptor_manager.h
+    renderer_vulkan/vk_format_reinterpreter.cpp
+    renderer_vulkan/vk_format_reinterpreter.h
+    renderer_vulkan/vk_layout_tracker.h
+    renderer_vulkan/vk_master_semaphore.cpp
+    renderer_vulkan/vk_master_semaphore.h
+    renderer_vulkan/vk_rasterizer.cpp
+    renderer_vulkan/vk_rasterizer.h
+    renderer_vulkan/vk_scheduler.cpp
+    renderer_vulkan/vk_scheduler.h
+    renderer_vulkan/vk_resource_pool.cpp
+    renderer_vulkan/vk_resource_pool.h
+    renderer_vulkan/vk_instance.cpp
+    renderer_vulkan/vk_instance.h
+    renderer_vulkan/vk_pipeline_cache.cpp
+    renderer_vulkan/vk_pipeline_cache.h
+    renderer_vulkan/vk_platform.cpp
+    renderer_vulkan/vk_platform.h
+    renderer_vulkan/vk_renderpass_cache.cpp
+    renderer_vulkan/vk_renderpass_cache.h
+    renderer_vulkan/vk_shader_gen.cpp
+    renderer_vulkan/vk_shader_gen.h
+    renderer_vulkan/vk_shader_gen_spv.cpp
+    renderer_vulkan/vk_shader_gen_spv.h
+    renderer_vulkan/vk_shader_util.cpp
+    renderer_vulkan/vk_shader_util.h
+    renderer_vulkan/vk_stream_buffer.cpp
+    renderer_vulkan/vk_stream_buffer.h
+    renderer_vulkan/vk_swapchain.cpp
+    renderer_vulkan/vk_swapchain.h
+    renderer_vulkan/vk_texture_runtime.cpp
+    renderer_vulkan/vk_texture_runtime.h
     shader/debug_data.h
     shader/shader.cpp
     shader/shader.h
+    shader/shader_cache.h
     shader/shader_interpreter.cpp
     shader/shader_interpreter.h
+    shader/shader_uniforms.cpp
+    shader/shader_uniforms.h
     swrasterizer/clipper.cpp
     swrasterizer/clipper.h
     swrasterizer/framebuffer.cpp
@@ -156,8 +201,14 @@ endif()
 
 create_target_directory_groups(video_core)
 
+if (NOT MSVC)
+    # Ignore nullability warnings generated from VMA
+    target_compile_options(vma INTERFACE -Wno-unused-variable -Wno-nullability-completeness)
+endif()
+
 target_link_libraries(video_core PUBLIC common core)
-target_link_libraries(video_core PRIVATE glad nihstro-headers Boost::serialization)
+target_link_libraries(video_core PRIVATE nihstro-headers Boost::serialization glm::glm)
+target_link_libraries(video_core PRIVATE vulkan-headers vma sirit SPIRV glslang glad)
 set_target_properties(video_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION ${ENABLE_LTO})
 
 if (ARCHITECTURE_x86_64)

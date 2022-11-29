@@ -15,7 +15,7 @@
 #include "core/settings.h"
 #include "core/tracer/recorder.h"
 #include "video_core/debug_utils/debug_utils.h"
-#include "video_core/rasterizer_interface.h"
+#include "video_core/renderer_opengl/gl_rasterizer.h"
 #include "video_core/renderer_opengl/gl_shader_util.h"
 #include "video_core/renderer_opengl/gl_state.h"
 #include "video_core/renderer_opengl/gl_vars.h"
@@ -353,7 +353,8 @@ static std::array<GLfloat, 3 * 2> MakeOrthographicMatrix(const float width, cons
 }
 
 RendererOpenGL::RendererOpenGL(Frontend::EmuWindow& window, Frontend::EmuWindow* secondary_window)
-    : RendererBase{window, secondary_window},
+    : RendererBase{window, secondary_window}, driver{Settings::values.graphics_api == Settings::GraphicsAPI::OpenGLES,
+                                                     Settings::values.renderer_debug},
       frame_dumper(Core::System::GetInstance().VideoDumper(), window) {
     window.mailbox = std::make_unique<OGLTextureMailbox>();
     if (secondary_window) {
@@ -363,6 +364,31 @@ RendererOpenGL::RendererOpenGL(Frontend::EmuWindow& window, Frontend::EmuWindow*
 }
 
 RendererOpenGL::~RendererOpenGL() = default;
+
+/// Initialize the renderer
+VideoCore::ResultStatus RendererOpenGL::Init() {
+    const Vendor vendor = driver.GetVendor();
+    switch (vendor) {
+    case Vendor::Generic:
+        return VideoCore::ResultStatus::ErrorGenericDrivers;
+    case Vendor::Unknown:
+        return VideoCore::ResultStatus::ErrorRendererInit;
+    default:
+        break;
+    }
+
+    InitOpenGLObjects();
+    rasterizer = std::make_unique<RasterizerOpenGL>(render_window, driver);
+
+    return VideoCore::ResultStatus::Success;
+}
+
+VideoCore::RasterizerInterface* RendererOpenGL::Rasterizer() {
+    return rasterizer.get();
+}
+
+/// Shutdown the renderer
+void RendererOpenGL::ShutDown() {}
 
 MICROPROFILE_DEFINE(OpenGL_RenderFrame, "OpenGL", "Render Frame", MP_RGB(128, 128, 64));
 MICROPROFILE_DEFINE(OpenGL_WaitPresent, "OpenGL", "Wait For Present", MP_RGB(128, 128, 128));
@@ -398,16 +424,15 @@ void RendererOpenGL::SwapBuffers() {
 
     m_current_frame++;
 
-    Core::System::GetInstance().perf_stats->EndSystemFrame();
+    Core::System& system = Core::System::GetInstance();
+    system.perf_stats->EndSystemFrame();
 
     render_window.PollEvents();
 
-    Core::System::GetInstance().frame_limiter.DoFrameLimiting(
-        Core::System::GetInstance().CoreTiming().GetGlobalTimeUs());
-    Core::System::GetInstance().perf_stats->BeginSystemFrame();
+    system.frame_limiter.DoFrameLimiting(system.CoreTiming().GetGlobalTimeUs());
+    system.perf_stats->BeginSystemFrame();
 
     prev_state.Apply();
-    RefreshRasterizerSetting();
 
     if (Pica::g_debug_context && Pica::g_debug_context->recorder) {
         Pica::g_debug_context->recorder->FrameFinished();
@@ -499,21 +524,17 @@ void RendererOpenGL::RenderToMailbox(const Layout::FramebufferLayout& layout,
 
         // INTEL driver workaround. We can't delete the previous render sync object until we are
         // sure that the presentation is done
-        if (frame->present_fence) {
-            glClientWaitSync(frame->present_fence, 0, GL_TIMEOUT_IGNORED);
+        if (frame->present_fence.handle) {
+            glClientWaitSync(frame->present_fence.handle, 0, GL_TIMEOUT_IGNORED);
         }
 
         // delete the draw fence if the frame wasn't presented
-        if (frame->render_fence) {
-            glDeleteSync(frame->render_fence);
-            frame->render_fence = nullptr;
-        }
+        frame->render_fence.Release();
 
         // wait for the presentation to be done
-        if (frame->present_fence) {
-            glWaitSync(frame->present_fence, 0, GL_TIMEOUT_IGNORED);
-            glDeleteSync(frame->present_fence);
-            frame->present_fence = nullptr;
+        if (frame->present_fence.handle) {
+            glWaitSync(frame->present_fence.handle, 0, GL_TIMEOUT_IGNORED);
+            frame->present_fence.Release();
         }
     }
 
@@ -529,7 +550,7 @@ void RendererOpenGL::RenderToMailbox(const Layout::FramebufferLayout& layout,
         state.Apply();
         DrawScreens(layout, flipped);
         // Create a fence for the frontend to wait on and swap this frame to OffTex
-        frame->render_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        frame->render_fence.Create();
         glFlush();
         mailbox->ReleaseRenderFrame(frame);
     }
@@ -563,8 +584,8 @@ void RendererOpenGL::LoadFBToScreenInfo(const GPU::Regs::FramebufferConfig& fram
     // only allows rows to have a memory alignement of 4.
     ASSERT(pixel_stride % 4 == 0);
 
-    if (!Rasterizer()->AccelerateDisplay(framebuffer, framebuffer_addr,
-                                         static_cast<u32>(pixel_stride), screen_info)) {
+    if (!rasterizer->AccelerateDisplay(framebuffer, framebuffer_addr,
+                                       static_cast<u32>(pixel_stride), screen_info)) {
         // Reset the screen info's display texture to its own permanent texture
         screen_info.display_texture = screen_info.texture.resource.handle;
         screen_info.display_texcoords = Common::Rectangle<float>(0.f, 0.f, 1.f, 1.f);
@@ -1141,7 +1162,9 @@ void RendererOpenGL::TryPresent(int timeout_ms, bool is_secondary) {
         LOG_DEBUG(Render_OpenGL, "Reloading present frame");
         window.mailbox->ReloadPresentFrame(frame, layout.width, layout.height);
     }
-    glWaitSync(frame->render_fence, 0, GL_TIMEOUT_IGNORED);
+
+    glWaitSync(frame->render_fence.handle, 0, GL_TIMEOUT_IGNORED);
+
     // INTEL workaround.
     // Normally we could just delete the draw fence here, but due to driver bugs, we can just delete
     // it on the emulation thread without too much penalty
@@ -1153,12 +1176,10 @@ void RendererOpenGL::TryPresent(int timeout_ms, bool is_secondary) {
                       GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
     // Delete the fence if we're re-presenting to avoid leaking fences
-    if (frame->present_fence) {
-        glDeleteSync(frame->present_fence);
-    }
+    frame->present_fence.Release();
 
-    /* insert fence for the main thread to block on */
-    frame->present_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    // Insert fence for the main thread to block on
+    frame->present_fence.Create();
     glFlush();
 
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
@@ -1186,109 +1207,8 @@ void RendererOpenGL::CleanupVideoDumping() {
     mailbox->free_cv.notify_one();
 }
 
-static const char* GetSource(GLenum source) {
-#define RET(s)                                                                                     \
-    case GL_DEBUG_SOURCE_##s:                                                                      \
-        return #s
-    switch (source) {
-        RET(API);
-        RET(WINDOW_SYSTEM);
-        RET(SHADER_COMPILER);
-        RET(THIRD_PARTY);
-        RET(APPLICATION);
-        RET(OTHER);
-    default:
-        UNREACHABLE();
-    }
-#undef RET
-
-    return "";
+void RendererOpenGL::Sync() {
+    rasterizer->SyncEntireState();
 }
-
-static const char* GetType(GLenum type) {
-#define RET(t)                                                                                     \
-    case GL_DEBUG_TYPE_##t:                                                                        \
-        return #t
-    switch (type) {
-        RET(ERROR);
-        RET(DEPRECATED_BEHAVIOR);
-        RET(UNDEFINED_BEHAVIOR);
-        RET(PORTABILITY);
-        RET(PERFORMANCE);
-        RET(OTHER);
-        RET(MARKER);
-    default:
-        UNREACHABLE();
-    }
-#undef RET
-
-    return "";
-}
-
-static void APIENTRY DebugHandler(GLenum source, GLenum type, GLuint id, GLenum severity,
-                                  GLsizei length, const GLchar* message, const void* user_param) {
-    Log::Level level;
-    switch (severity) {
-    case GL_DEBUG_SEVERITY_HIGH:
-        level = Log::Level::Critical;
-        break;
-    case GL_DEBUG_SEVERITY_MEDIUM:
-        level = Log::Level::Warning;
-        break;
-    case GL_DEBUG_SEVERITY_NOTIFICATION:
-    case GL_DEBUG_SEVERITY_LOW:
-        level = Log::Level::Debug;
-        break;
-    }
-    LOG_GENERIC(Log::Class::Render_OpenGL, level, "{} {} {}: {}", GetSource(source), GetType(type),
-                id, message);
-}
-
-/// Initialize the renderer
-VideoCore::ResultStatus RendererOpenGL::Init() {
-#ifndef ANDROID
-    if (!gladLoadGL()) {
-        return VideoCore::ResultStatus::ErrorBelowGL43;
-    }
-
-    // Qualcomm has some spammy info messages that are marked as errors but not important
-    // https://developer.qualcomm.com/comment/11845
-    if (GLAD_GL_KHR_debug) {
-        glEnable(GL_DEBUG_OUTPUT);
-        glDebugMessageCallback(DebugHandler, nullptr);
-    }
-#endif
-
-    const std::string_view gl_version{reinterpret_cast<char const*>(glGetString(GL_VERSION))};
-    const std::string_view gpu_vendor{reinterpret_cast<char const*>(glGetString(GL_VENDOR))};
-    const std::string_view gpu_model{reinterpret_cast<char const*>(glGetString(GL_RENDERER))};
-
-    LOG_INFO(Render_OpenGL, "GL_VERSION: {}", gl_version);
-    LOG_INFO(Render_OpenGL, "GL_VENDOR: {}", gpu_vendor);
-    LOG_INFO(Render_OpenGL, "GL_RENDERER: {}", gpu_model);
-
-    auto& telemetry_session = Core::System::GetInstance().TelemetrySession();
-    constexpr auto user_system = Common::Telemetry::FieldType::UserSystem;
-    telemetry_session.AddField(user_system, "GPU_Vendor", std::string(gpu_vendor));
-    telemetry_session.AddField(user_system, "GPU_Model", std::string(gpu_model));
-    telemetry_session.AddField(user_system, "GPU_OpenGL_Version", std::string(gl_version));
-
-    if (gpu_vendor == "GDI Generic") {
-        return VideoCore::ResultStatus::ErrorGenericDrivers;
-    }
-
-    if (!(GLAD_GL_VERSION_4_3 || GLAD_GL_ES_VERSION_3_1)) {
-        return VideoCore::ResultStatus::ErrorBelowGL43;
-    }
-
-    InitOpenGLObjects();
-
-    RefreshRasterizerSetting();
-
-    return VideoCore::ResultStatus::Success;
-}
-
-/// Shutdown the renderer
-void RendererOpenGL::ShutDown() {}
 
 } // namespace OpenGL

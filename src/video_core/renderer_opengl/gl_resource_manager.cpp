@@ -80,7 +80,7 @@ void OGLTexture::Allocate(GLenum target, GLsizei levels, GLenum internalformat, 
     glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glBindTexture(GL_TEXTURE_2D, old_tex);
+    glBindTexture(target, old_tex);
 }
 
 void OGLTexture::CopyFrom(const OGLTexture& other, GLenum target, GLsizei levels, GLsizei width,
@@ -153,6 +153,14 @@ void OGLProgram::Create(const char* vert_shader, const char* frag_shader) {
     Create(false, {vert.handle, frag.handle});
 }
 
+void OGLProgram::Create(const std::string_view compute_shader) {
+    OGLShader comp;
+    comp.Create(compute_shader.data(), GL_COMPUTE_SHADER);
+
+    MICROPROFILE_SCOPE(OpenGL_ResourceCreation);
+    Create(false, {comp.handle});
+}
+
 void OGLProgram::Release() {
     if (handle == 0)
         return;
@@ -196,6 +204,22 @@ void OGLBuffer::Release() {
     MICROPROFILE_SCOPE(OpenGL_ResourceDeletion);
     glDeleteBuffers(1, &handle);
     OpenGLState::GetCurState().ResetBuffer(handle).Apply();
+    handle = 0;
+}
+
+void OGLSync::Create() {
+    if (handle != 0)
+        return;
+
+    handle = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+}
+
+void OGLSync::Release() {
+    if (!handle) {
+        return;
+    }
+
+    glDeleteSync(handle);
     handle = 0;
 }
 

@@ -4,7 +4,6 @@
 
 #include <glad/glad.h>
 #include "core/frontend/emu_window.h"
-#include "core/frontend/scope_acquire_context.h"
 #include "video_core/renderer_opengl/frame_dumper_opengl.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
 
@@ -39,7 +38,7 @@ void FrameDumperOpenGL::StopDumping() {
 }
 
 void FrameDumperOpenGL::PresentLoop() {
-    Frontend::ScopeAcquireContext scope{*context};
+    const auto scope = context->Acquire();
     InitializeOpenGLObjects();
 
     const auto& layout = GetLayout();
@@ -53,14 +52,15 @@ void FrameDumperOpenGL::PresentLoop() {
             LOG_DEBUG(Render_OpenGL, "Reloading present frame");
             mailbox->ReloadPresentFrame(frame, layout.width, layout.height);
         }
-        glWaitSync(frame->render_fence, 0, GL_TIMEOUT_IGNORED);
+
+        glWaitSync(frame->render_fence.handle, 0, GL_TIMEOUT_IGNORED);
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, frame->present.handle);
         glBindBuffer(GL_PIXEL_PACK_BUFFER, pbos[current_pbo].handle);
         glReadPixels(0, 0, layout.width, layout.height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, 0);
 
         // Insert fence for the main thread to block on
-        frame->present_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        frame->present_fence.Create();
         glFlush();
 
         // Bind the previous PBO and read the pixels

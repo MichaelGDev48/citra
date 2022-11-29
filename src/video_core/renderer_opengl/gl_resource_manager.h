@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <string_view>
 #include <utility>
 #include <vector>
 #include <glad/glad.h>
@@ -137,10 +138,42 @@ public:
     /// Creates a new program from given shader soruce code
     void Create(const char* vert_shader, const char* frag_shader);
 
+    /// Creates a new compute shader program
+    void Create(const std::string_view compute_shader);
+
     /// Deletes the internal OpenGL resource
     void Release();
 
     GLuint handle = 0;
+};
+
+class OGLSync final : private NonCopyable {
+public:
+    OGLSync() = default;
+
+    OGLSync(OGLSync&& o) noexcept : handle(std::exchange(o.handle, nullptr)) {}
+
+    ~OGLSync() {
+        Release();
+    }
+
+    OGLSync& operator=(OGLSync&& o) noexcept {
+        Release();
+        handle = std::exchange(o.handle, nullptr);
+        return *this;
+    }
+
+    explicit operator bool() const noexcept {
+        return handle != 0;
+    }
+
+    /// Creates a new internal OpenGL resource and stores the handle
+    void Create();
+
+    /// Deletes the internal OpenGL resource
+    void Release();
+
+    GLsync handle = 0;
 };
 
 class OGLPipeline : private NonCopyable {
