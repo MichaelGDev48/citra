@@ -35,7 +35,10 @@ if (CITRA_TESTS AND NOT TARGET Catch2::Catch2)
 endif()
 
 # Crypto++
-add_subdirectory(cryptopp)
+if (NOT TARGET cryptopp::cryptopp)
+    add_subdirectory(cryptopp)
+    add_library(cryptopp::cryptopp ALIAS cryptopp)
+endif()
 
 # fmt and Xbyak need to be added before dynarmic
 # libfmt
