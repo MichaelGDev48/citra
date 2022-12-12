@@ -161,5 +161,5 @@ target_link_libraries(video_core PRIVATE glad nihstro-headers Boost::serializati
 set_target_properties(video_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION ${ENABLE_LTO})
 
 if (ARCHITECTURE_x86_64)
-    target_link_libraries(video_core PUBLIC xbyak)
+    target_link_libraries(video_core PUBLIC xbyak::xbyak)
 endif()

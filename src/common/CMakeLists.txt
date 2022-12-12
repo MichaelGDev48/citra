@@ -150,5 +150,5 @@ target_link_libraries(common PRIVATE libzstd_static)
 set_target_properties(common PROPERTIES INTERPROCEDURAL_OPTIMIZATION ${ENABLE_LTO})
 
 if (ARCHITECTURE_x86_64)
-    target_link_libraries(common PRIVATE xbyak)
+    target_link_libraries(common PRIVATE xbyak::xbyak)
 endif()
