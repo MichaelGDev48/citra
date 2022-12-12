@@ -52,6 +52,8 @@ CMAKE_DEPENDENT_OPTION(ENABLE_FDK "Use FDK AAC decoder" OFF "NOT ENABLE_FFMPEG_A
 
 option(CITRA_CHECK_SUBMODULES "Check if submodules are present" ON)
 
+option(CITRA_TESTS "Compile tests" ON)
+
 if(NOT EXISTS ${PROJECT_SOURCE_DIR}/.git/hooks/pre-commit)
     message(STATUS "Copying pre-commit hook")
     file(COPY hooks/pre-commit
