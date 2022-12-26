@@ -1,4 +1,6 @@
 #!/bin/sh -ex
+brew unlink python@2 || true
+rm '/usr/local/bin/2to3' || true
 wget https://github.com/macports/macports-base/releases/download/v2.8.0/MacPorts-2.8.0-12-Monterey.pkg
 sudo installer -pkg ./MacPorts-2.8.0-12-Monterey.pkg -target /
 
