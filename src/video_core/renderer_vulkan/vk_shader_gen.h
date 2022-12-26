@@ -150,7 +150,8 @@ struct PicaFSConfig : Common::HashableStruct<PicaFSConfigState> {
  * PICA vertex/geometry shader.
  */
 struct PicaShaderConfigCommon {
-    void Init(const Pica::ShaderRegs& regs, Pica::Shader::ShaderSetup& setup);
+    void Init(const Pica::RasterizerRegs& rasterizer,
+              const Pica::ShaderRegs& regs, Pica::Shader::ShaderSetup& setup);
 
     u64 program_hash;
     u64 swizzle_hash;
@@ -163,6 +164,20 @@ struct PicaShaderConfigCommon {
 
     // output_map[output register index] -> output attribute index
     std::array<u32, 16> output_map;
+
+
+
+
+    u32 vs_output_attributes;
+    u32 gs_output_attributes;
+
+    struct SemanticMap {
+        u32 attribute_index;
+        u32 component_index;
+    };
+
+    // semantic_maps[semantic name] -> GS output attribute index + component index
+    std::array<SemanticMap, 24> semantic_maps;
 };
 
 /**
@@ -170,8 +185,9 @@ struct PicaShaderConfigCommon {
  * shader.
  */
 struct PicaVSConfig : Common::HashableStruct<PicaShaderConfigCommon> {
-    explicit PicaVSConfig(const Pica::ShaderRegs& regs, Pica::Shader::ShaderSetup& setup) {
-        state.Init(regs, setup);
+    explicit PicaVSConfig(const Pica::RasterizerRegs& rasterizer,
+                          const Pica::ShaderRegs& regs, Pica::Shader::ShaderSetup& setup) {
+        state.Init(rasterizer, regs, setup);
     }
     explicit PicaVSConfig(const PicaShaderConfigCommon& conf) {
         state = conf;

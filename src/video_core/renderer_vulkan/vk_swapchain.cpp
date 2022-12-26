@@ -2,9 +2,9 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
-#include <algorithm>
 #include "common/logging/log.h"
 #include "common/microprofile.h"
+#include "common/polyfill_ranges.h"
 #include "common/settings.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_renderpass_cache.h"
@@ -134,8 +134,8 @@ void Swapchain::FindPresentFormat() {
     const std::vector<vk::SurfaceFormatKHR> formats =
         instance.GetPhysicalDevice().getSurfaceFormatsKHR(surface);
 
-        // If there is a single undefined surface format, the device doesn't care, so we'll just use
-        // RGBA
+    // If there is a single undefined surface format, the device doesn't care, so we'll just use
+    // RGBA
     if (formats[0].format == vk::Format::eUndefined) {
         surface_format.format = vk::Format::eR8G8B8A8Unorm;
         surface_format.colorSpace = vk::ColorSpaceKHR::eSrgbNonlinear;
@@ -165,9 +165,8 @@ void Swapchain::SetPresentMode() {
             instance.GetPhysicalDevice().getSurfacePresentModesKHR(surface);
 
         const auto FindMode = [&modes](vk::PresentModeKHR requested) {
-            auto it =
-                std::find_if(modes.begin(), modes.end(),
-                             [&requested](vk::PresentModeKHR mode) { return mode == requested; });
+            auto it = std::ranges::find_if(
+                modes, [&requested](vk::PresentModeKHR mode) { return mode == requested; });
 
             return it != modes.end();
         };

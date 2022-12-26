@@ -134,7 +134,6 @@ std::tuple<u8*, u32, bool> StreamBuffer::Map(u32 size) {
 
     Bucket& bucket = buckets[bucket_index];
 
-    // If we reach bucket boundaries move over to the next one
     if (bucket.cursor + size > bucket_size) {
         bucket.gpu_tick = scheduler.CurrentTick();
         MoveNextBucket();
@@ -165,8 +164,8 @@ void StreamBuffer::Flush() {
     ASSERT(flush_size <= bucket_size);
     ASSERT(flush_start + flush_size <= total_size);
 
+    // Ensure all staging writes are visible to the host memory domain
     if (flush_size > 0) [[likely]] {
-        // Ensure all staging writes are visible to the host memory domain
         VmaAllocator allocator = instance.GetAllocator();
         vmaFlushAllocation(allocator, staging.allocation, flush_start, flush_size);
         if (gpu_buffer) {

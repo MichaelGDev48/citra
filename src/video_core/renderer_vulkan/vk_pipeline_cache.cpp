@@ -205,7 +205,7 @@ void PipelineCache::BindPipeline(const PipelineInfo& info) {
 bool PipelineCache::UseProgrammableVertexShader(const Pica::Regs& regs,
                                                 Pica::Shader::ShaderSetup& setup,
                                                 const VertexLayout& layout) {
-    PicaVSConfig config{regs.vs, setup};
+    PicaVSConfig config{regs.rasterizer, regs.vs, setup};
 
     u32 emulated_attrib_loc = MAX_VERTEX_ATTRIBUTES;
     for (u32 i = 0; i < layout.attribute_count; i++) {
@@ -243,14 +243,15 @@ void PipelineCache::UseTrivialVertexShader() {
 }
 
 void PipelineCache::UseFixedGeometryShader(const Pica::Regs& regs) {
+    return UseTrivialGeometryShader();
     const PicaFixedGSConfig gs_config{regs};
+    const vk::ShaderModule handle =
+        fixed_geometry_shaders.Get(gs_config, vk::ShaderStageFlagBits::eGeometry,
+                                   instance.GetDevice(), ShaderOptimization::Debug);
 
-    scheduler.Record([this, gs_config](vk::CommandBuffer, vk::CommandBuffer) {
-        vk::ShaderModule handle =
-            fixed_geometry_shaders.Get(gs_config, vk::ShaderStageFlagBits::eGeometry,
-                                       instance.GetDevice(), ShaderOptimization::High);
+    scheduler.Record([this, handle, hash = gs_config.Hash()](vk::CommandBuffer, vk::CommandBuffer) {
         current_shaders[ProgramType::GS] = handle;
-        shader_hashes[ProgramType::GS] = gs_config.Hash();
+        shader_hashes[ProgramType::GS] = hash;
     });
 }
 

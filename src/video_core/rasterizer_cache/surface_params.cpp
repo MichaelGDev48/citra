@@ -70,6 +70,7 @@ Common::Rectangle<u32> SurfaceParams::GetSubRect(const SurfaceParams& sub_surfac
     if (is_tiled) {
         const int x0 = (begin_pixel_index % (stride * 8)) / 8;
         const int y0 = (begin_pixel_index / (stride * 8)) * 8;
+
         // Top to bottom
         return Common::Rectangle<u32>(x0, height - y0, x0 + sub_surface.width,
                                       height - (y0 + sub_surface.height));
@@ -77,6 +78,7 @@ Common::Rectangle<u32> SurfaceParams::GetSubRect(const SurfaceParams& sub_surfac
 
     const int x0 = begin_pixel_index % stride;
     const int y0 = begin_pixel_index / stride;
+
     // Bottom to top
     return Common::Rectangle<u32>(x0, y0 + sub_surface.height, x0 + sub_surface.width, y0);
 }
