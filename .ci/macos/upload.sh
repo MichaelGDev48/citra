@@ -16,22 +16,28 @@ BUNDLE_PATH="$REV_NAME/citra-qt.app"
 BUNDLE_CONTENTS_PATH="$BUNDLE_PATH/Contents"
 BUNDLE_EXECUTABLE_PATH="$BUNDLE_CONTENTS_PATH/MacOS/citra-qt"
 BUNDLE_LIB_PATH="$BUNDLE_CONTENTS_PATH/lib"
+BUNDLE_FRAMEWORK_PATH="$BUNDLE_CONTENTS_PATH/Frameworks"
 BUNDLE_RESOURCES_PATH="$BUNDLE_CONTENTS_PATH/Resources"
 
 CITRA_STANDALONE_PATH="$REV_NAME/citra"
 
 # move libs into folder for deployment
-python3 -m macpack.patcher $BUNDLE_EXECUTABLE_PATH -d "../Frameworks"
+macpack $BUNDLE_EXECUTABLE_PATH -d "../Frameworks"
 # move qt frameworks into app bundle for deployment
 $(pwd)/Qt-5.15.2-universal/bin/macdeployqt $BUNDLE_PATH -executable=$BUNDLE_EXECUTABLE_PATH
 
 # move libs into folder for deployment
-python3 -m macpack.patcher $CITRA_STANDALONE_PATH -d "libs"
+macpack $CITRA_STANDALONE_PATH -d "libs"
 
 # bundle MoltenVK
 VULKAN_LOADER_PATH=/opt/local
 MOLTENVK_PATH=/opt/local
 mkdir $BUNDLE_LIB_PATH
+# replace SDL2 with the universal2 version , copy to frameworks directory
+cp /opt/local/lib/libSDL2-2.0.0.dylib $BUNDLE_FRAMEWORK_PATH
+#rename it to libSDL2-2.0
+rm $BUNDLE_FRAMEWORK_PATH/libSDL2-2.0.dylib
+mv $BUNDLE_FRAMEWORK_PATH/libSDL2-2.0.0.dylib $BUNDLE_FRAMEWORK_PATH/libSDL2-2.0.dylib
 cp $VULKAN_LOADER_PATH/lib/libvulkan.dylib $BUNDLE_LIB_PATH
 cp $MOLTENVK_PATH/lib/libMoltenVK.dylib $BUNDLE_LIB_PATH
 cp -r $VULKAN_LOADER_PATH/share/vulkan $BUNDLE_RESOURCES_PATH
