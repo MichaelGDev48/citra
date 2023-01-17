@@ -89,14 +89,14 @@ jobs:
         uses: little-core-labs/get-git-tag@v3.0.2
         id: tagName
       - name: Install dependencies
-        run: ./.ci/macos/deps.sh
+        run: chmod +x .ci/macos/deps.sh && ./.ci/macos/deps.sh
       - name: Build
-        run: ./.ci/macos/build.sh
+        run: chmod +x .ci/macos/build.sh && ./.ci/macos/build.sh
         env:
           MACOSX_DEPLOYMENT_TARGET: "10.13"
           ENABLE_COMPATIBILITY_REPORTING: "ON"
       - name: Pack
-        run: ./.ci/macos/upload.sh
+        run: chmod +x .ci/macos/upload.sh && .ci/macos/upload.sh
       - name: Upload
         uses: actions/upload-artifact@v3
         with:
